@@ -6,30 +6,29 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { ticketId, message_id, from_email, from_name, html, text } = body;
 
-    // Validación básica
-    if (!ticketId || !message_id) {
-        return NextResponse.json({ success: false, error: "Faltan datos clave (ticketId o message_id)" }, { status: 400 });
+    // Validación estricta
+    if (!ticketId || !message_id || !from_email) {
+        return NextResponse.json({ success: false, error: "Faltan datos obligatorios para el mensaje" }, { status: 400 });
     }
 
-    // Idempotencia: Verificar si el mensaje ya existe para evitar duplicados si n8n reintenta.
+    // Idempotencia (Evitar duplicados)
     const existingMessage = await prisma.message.findUnique({
         where: { messageIdOriginal: message_id }
     });
 
     if (existingMessage) {
-        // Si ya existe, devolvemos OK pero avisamos que ya estaba.
         return NextResponse.json({ success: true, message: existingMessage, status: "already_exists" });
     }
 
-    // Creamos el mensaje nuevo
+    // Crear Mensaje
     const newMessage = await prisma.message.create({
       data: {
-        ticketId: Number(ticketId), // Aseguramos que el ID del ticket sea número
+        ticketId: Number(ticketId),
         messageIdOriginal: message_id,
         fromEmail: from_email,
-        fromName: from_name,
-        htmlBody: html,
-        textBody: text
+        fromName: from_name || "Desconocido", 
+        htmlBody: html || "<div></div>",      // Obligatorio en DB
+        textBody: text || ""                  // Obligatorio en DB
       },
     });
 

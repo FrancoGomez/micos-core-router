@@ -5,37 +5,34 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // 1. Desestructuramos los datos que envía n8n
     const { 
       message_id_original, 
       subject, 
-      sector_principal, 
-      source_channel // <--- EL CAMPO ESTRELLA
+      source_channel 
     } = body;
 
-    // 2. Validación básica
-    if (!message_id_original) {
-        return NextResponse.json({ success: false, error: "Falta message_id_original" }, { status: 400 });
+    // Validación estricta
+    if (!message_id_original || !source_channel) {
+        return NextResponse.json({ success: false, error: "Faltan datos obligatorios (message_id o source_channel)" }, { status: 400 });
     }
 
-    // 3. Upsert: Crear o Actualizar Ticket
+    // Upsert
     const ticket = await prisma.ticket.upsert({
       where: { ticketKey: message_id_original },
       
-      // Si el ticket YA existe:
+      // Si YA existe (Actualización):
       update: { 
         updatedAt: new Date(), 
-        subject: subject, // Actualizamos asunto por si cambió (Re: ...)
-        estado: "abierto" // Si entra un mensaje nuevo, reabrimos el ticket por si estaba cerrado
+        subject: subject || "Sin Asunto", 
+        estado: "nuevo" // Vuelve a "nuevo" si entra respuesta del cliente
       },
       
-      // Si el ticket es NUEVO:
+      // Si es NUEVO (Creación):
       create: {
         ticketKey: message_id_original,
-        subject: subject || "(Sin Asunto)",
-        sectorPrincipal: sector_principal || "ventas",
-        sourceChannel: source_channel || "desconocido", // Guardamos de qué casilla vino
-        estado: "abierto"
+        subject: subject || "Sin Asunto",
+        sourceChannel: source_channel,
+        estado: "nuevo"
       },
     });
 
