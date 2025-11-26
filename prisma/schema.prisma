@@ -17,16 +17,24 @@ model ConfigGlobal {
 }
 
 model Ticket {
-  id                   Int       @id @default(autoincrement())
-  ticketKey            String    @unique @map("ticket_key")
-  subject              String?
-  sectorPrincipal      String?   @map("sector_principal")
-  origenReal           String?   @map("origen_real")
-  sectoresInvolucrados String[]  @map("sectores_involucrados")
-  estado               String    @default("abierto")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at")
-  messages             Message[]
+  id              Int       @id @default(autoincrement())
+  ticketKey       String    @unique @map("ticket_key") // ID del Hilo (Gmail/Outlook)
+  subject         String?
+  
+  // Clasificación
+  sectorPrincipal String?   @map("sector_principal")   // Ej: "ventas"
+  sourceChannel   String?   @map("source_channel")     // Ej: "micos.mza@gmail.com" (NUEVO)
+  
+  // Gestión de Estado
+  estado          String    @default("abierto")        // "abierto", "leido", "asignado", "respondido"
+  assignedTo      String?   @map("assigned_to")        // Email del empleado (NUEVO)
+  
+  // Fechas
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+  
+  // Relaciones
+  messages        Message[]
 
   @@map("tickets")
 }
@@ -34,14 +42,18 @@ model Ticket {
 model Message {
   id                Int      @id @default(autoincrement())
   ticketId          Int      @map("ticket_id")
+  
   messageIdOriginal String   @unique @map("message_id_original")
+  
   fromEmail         String?  @map("from_email")
   fromName          String?  @map("from_name")
-  toEmail           String?  @map("to_email")
+  toEmail           String?  @map("to_email") 
+  
   htmlBody          String?  @map("html_body")
   textBody          String?  @map("text_body")
-  createdAt         DateTime @default(now()) @map("created_at")
   
+  createdAt         DateTime @default(now()) @map("created_at")
+   
   ticket            Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@map("messages")
