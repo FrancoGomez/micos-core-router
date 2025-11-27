@@ -5,31 +5,33 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
+    // CORRECCIÓN: Usamos ticket_key (ConversationID), NO message_id_original
     const { 
-      message_id_original, 
+      ticket_key, 
       subject, 
       source_channel 
     } = body;
 
     // Validación estricta
-    if (!message_id_original || !source_channel) {
-        return NextResponse.json({ success: false, error: "Faltan datos obligatorios (message_id o source_channel)" }, { status: 400 });
+    if (!ticket_key || !source_channel) {
+        return NextResponse.json({ success: false, error: "Faltan datos obligatorios (ticket_key o source_channel)" }, { status: 400 });
     }
 
     // Upsert
     const ticket = await prisma.ticket.upsert({
-      where: { ticketKey: message_id_original },
+      // Buscamos por la clave del hilo (ConversationID)
+      where: { ticketKey: ticket_key },
       
       // Si YA existe (Actualización):
       update: { 
         updatedAt: new Date(), 
-        subject: subject || "Sin Asunto", 
-        estado: "nuevo" // Vuelve a "nuevo" si entra respuesta del cliente
+        // Solo actualizamos el estado si es necesario, por ejemplo "reabierto" si estaba cerrado
+        estado: "nuevo" 
       },
       
       // Si es NUEVO (Creación):
       create: {
-        ticketKey: message_id_original,
+        ticketKey: ticket_key,
         subject: subject || "Sin Asunto",
         sourceChannel: source_channel,
         estado: "nuevo"
