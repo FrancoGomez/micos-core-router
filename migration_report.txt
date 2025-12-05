@@ -1,0 +1,45 @@
+MIGRATION REPORT: TICKET-MESSAGE 1:N TO N:M
+=============================================
+Date: 2025-12-04
+
+1. SCHEMA CHANGES (prisma/schema.prisma)
+========================================
+- Removed `ticketId` column from `Message` model.
+- Removed `ticket` relation from `Message` model.
+- Added `tickets Ticket[]` to `Message` model.
+- `Ticket` model retains `messages Message[]` but it is now a Many-to-Many relation.
+
+2. MIGRATION SQL (prisma/migrations/20251204234500_refactor_many_to_many/migration.sql)
+=======================================================================================
+This SQL script performs the critical data migration:
+1. Creates the pivot table `_MessageToTicket` required by Prisma.
+2. Copies existing `ticket_id` relationships from `messages` table to `_MessageToTicket`.
+3. Drops the old `ticket_id` column and constraint from `messages`.
+
+To apply this migration, run:
+`npx prisma migrate resolve --applied 20251204234500_refactor_many_to_many` (if manually applied)
+OR
+`npx prisma migrate dev` (if you want Prisma to apply it, but be careful as it might try to generate its own SQL. Best to use `prisma db execute` with the file content if doing manual intervention).
+
+3. API LOGIC UPDATE (app/api/messages/create/route.ts)
+======================================================
+The endpoint has been rewritten to use `prisma.message.upsert`.
+
+Logic:
+- Search by `message_id_original`.
+- If FOUND (Update):
+  - Connects the provided `ticket_id` to the existing message's `tickets` list.
+  - Does NOT disconnect previous tickets (allows a message to belong to multiple tickets).
+- If NOT FOUND (Create):
+  - Creates the message.
+  - Connects the provided `ticket_id`.
+
+4. VERIFICATION INSTRUCTIONS
+============================
+1. Run the SQL migration against your database.
+2. Run `npx prisma generate` to update the client.
+3. Send a POST request to `/api/messages/create` with a `message_id_original` and `ticket_id` (A).
+   - Verify it creates the message and link.
+4. Send another POST request with the SAME `message_id_original` but a DIFFERENT `ticket_id` (B).
+   - Verify it returns 200 OK.
+   - Check DB: The message should now be linked to BOTH Ticket A and Ticket B in `_MessageToTicket`.

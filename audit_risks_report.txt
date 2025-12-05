@@ -1,0 +1,64 @@
+AUDIT RISKS REPORT: POST-MIGRATION (1:N -> N:M)
+=================================================
+Date: 2025-12-04
+Auditor: Tech Lead
+
+1. TYPESCRIPT REGRESSION ERRORS
+===============================
+Status: PASSED
+- Search for `message.ticketId` in `app/` and `lib/` returned NO results.
+- The codebase seems clean of direct references to the removed field.
+
+2. REFERENTIAL INTEGRITY (EDGE CASES)
+=====================================
+Context: `app/api/messages/create/route.ts`
+Scenario: `ticket_id` provided in body does NOT exist in DB.
+Behavior: Prisma `connect` will throw an error (Code P2025: "An operation failed because it depends on one or more records that were required but not found").
+Result: The API catches this error and returns 500 Internal Server Error.
+Risk: High for n8n flows. If a ticket creation fails but message creation proceeds with an invalid ticket ID, the message will fail to ingest.
+Recommendation: Ensure `ticket_id` exists before calling this endpoint, or accept that 500 is the correct response for data inconsistency.
+
+3. PERFORMANCE & INDICES
+========================
+Status: FIXED (Applied to schema.prisma)
+- Identified missing indices for high-volume search fields mentioned in requirements.
+- Added `@@index([sourceChannel])` to `Ticket` model.
+- Added `@@index([fromEmail])` to `Message` model.
+- Added `@@index([estado])` to `Ticket` model (Bonus for filtering active tickets).
+
+4. DATA VISIBILITY
+==================
+Status: FIXED (Applied to route.ts)
+- The original `upsert` returned the `message` object but NOT the connected tickets.
+- Added `include: { tickets: true }` to the `upsert` call.
+- Now the API response confirms exactly which tickets the message is linked to.
+
+5. APPLIED FIXES
+================
+The following files have been automatically patched with the improvements:
+
+A. prisma/schema.prisma
+-----------------------
+```prisma
+model Ticket {
+  ...
+  @@index([sourceChannel])
+  @@index([estado])
+}
+
+model Message {
+  ...
+  @@index([fromEmail])
+}
+```
+
+B. app/api/messages/create/route.ts
+-----------------------------------
+```typescript
+const message = await prisma.message.upsert({
+  ...
+  include: {
+    tickets: true // Added for visibility
+  }
+});
+```

@@ -1,0 +1,168 @@
+EXECUTION STATUS REPORT: REFACCIÓN N:M
+======================================
+Fecha: 2025-12-04
+Estado: CÓDIGO LISTO / MIGRACIÓN PENDIENTE (Falta DATABASE_URL)
+
+1. PRISMA SCHEMA (FINAL)
+========================
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ConfigGlobal {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("config_global")
+}
+
+model Ticket {
+  id            Int       @id @default(autoincrement())
+  ticketKey     String    @unique @map("ticket_key") 
+  subject       String
+  sourceChannel String    @map("source_channel") 
+  estado        String    @default("nuevo")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+  messages      Message[]
+
+  @@map("tickets")
+  @@index([sourceChannel])
+  @@index([estado])
+}
+
+model Message {
+  id                Int      @id @default(autoincrement())
+  messageIdOriginal String   @unique @map("message_id_original")
+  fromEmail         String   @map("from_email")
+  fromName          String   @map("from_name")
+  htmlBody          String   @map("html_body")
+  textBody          String   @map("text_body") 
+  createdAt         DateTime @default(now()) @map("created_at")
+  tickets           Ticket[]
+
+  @@map("messages")
+  @@index([fromEmail])
+}
+
+model ErrorLog {
+  id           Int      @id @default(autoincrement())
+  workflowName String?  @map("workflow_name")
+  errorMessage String?  @map("error_message")
+  stackTrace   String?  @map("stack_trace")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("error_logs")
+}
+
+2. SQL DE MIGRACIÓN (REQUERIDO)
+===============================
+Este es el SQL que debe ejecutarse para migrar los datos sin perderlos.
+Debe inyectarse en el archivo de migración generado por Prisma antes de aplicar.
+
+-- CreateTable
+CREATE TABLE "_MessageToTicket" (
+    "A" INTEGER NOT NULL,
+    "B" INTEGER NOT NULL
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "_MessageToTicket_AB_unique" ON "_MessageToTicket"("A", "B");
+
+-- CreateIndex
+CREATE INDEX "_MessageToTicket_B_index" ON "_MessageToTicket"("B");
+
+-- AddForeignKey
+ALTER TABLE "_MessageToTicket" ADD CONSTRAINT "_MessageToTicket_A_fkey" FOREIGN KEY ("A") REFERENCES "messages"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "_MessageToTicket" ADD CONSTRAINT "_MessageToTicket_B_fkey" FOREIGN KEY ("B") REFERENCES "tickets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- DATA MIGRATION: Copy existing relationships to the new pivot table
+INSERT INTO "_MessageToTicket" ("A", "B")
+SELECT id, ticket_id
+FROM messages
+WHERE ticket_id IS NOT NULL;
+
+-- DropForeignKey
+ALTER TABLE "messages" DROP CONSTRAINT "messages_ticket_id_fkey";
+
+-- DropColumn
+ALTER TABLE "messages" DROP COLUMN "ticket_id";
+
+3. API BACKEND (app/api/messages/create/route.ts)
+=================================================
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    
+    // CORRECCIÓN: Alinear nombres con lo que manda n8n (snake_case)
+    const { 
+        ticket_id,          // n8n envía ticket_id
+        message_id_original, // n8n envía message_id_original
+        from_email, 
+        from_name, 
+        html_body,          // n8n envía html_body
+        text_body           // n8n envía text_body
+    } = body;
+
+    // Validación estricta
+    if (!ticket_id || !message_id_original || !from_email) {
+        return NextResponse.json({ success: false, error: "Faltan datos obligatorios para el mensaje" }, { status: 400 });
+    }
+
+    // Upsert Logic for Many-to-Many
+    // Si existe: actualiza y conecta el nuevo ticket.
+    // Si no existe: crea y conecta el ticket.
+    const message = await prisma.message.upsert({
+      where: { messageIdOriginal: message_id_original },
+      update: {
+        // Conectar el nuevo ticket a la lista existente
+        tickets: {
+          connect: { id: Number(ticket_id) }
+        }
+      },
+      create: {
+        messageIdOriginal: message_id_original,
+        fromEmail: from_email,
+        fromName: from_name || "Desconocido",
+        htmlBody: html_body || "<div></div>",
+        textBody: text_body || "",
+        tickets: {
+          connect: { id: Number(ticket_id) }
+        }
+      },
+      include: {
+        tickets: true
+      }
+    });
+
+    return NextResponse.json({ success: true, message });
+  } catch (error: any) {
+    console.error("[API Message Create] Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+4. TEST DE COMPILACIÓN
+======================
+Comando: `npx tsc --noEmit`
+Resultado: ✅ PASSED (Sin errores)
+
+NOTA IMPORTANTE:
+No se pudo ejecutar `npx prisma migrate dev` porque falta el archivo `.env` con la variable `DATABASE_URL`.
+Para aplicar los cambios en la base de datos real:
+1. Asegúrate de tener `.env` configurado.
+2. Ejecuta `npx prisma migrate dev --create-only --name refactor_mn_relation`.
+3. Pega el SQL de la sección 2 en el archivo generado.
+4. Ejecuta `npx prisma migrate deploy`.

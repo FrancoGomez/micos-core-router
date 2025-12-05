@@ -35,11 +35,12 @@ model Ticket {
   messages      Message[]
 
   @@map("tickets")
+  @@index([sourceChannel])
+  @@index([estado])
 }
 
 model Message {
   id                Int      @id @default(autoincrement())
-  ticketId          Int      @map("ticket_id")
   
   messageIdOriginal String   @unique @map("message_id_original")
   
@@ -52,9 +53,10 @@ model Message {
   
   createdAt         DateTime @default(now()) @map("created_at")
    
-  ticket            Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  tickets           Ticket[]
 
   @@map("messages")
+  @@index([fromEmail])
 }
 
 model ErrorLog {
